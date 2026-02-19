@@ -75,9 +75,9 @@ export function evaluateRisk(
   const riskPerShare = Math.abs(entry - stopLoss);
   const rewardPerShare = Math.abs(takeProfit - entry);
 
-  // Gate 4: Minimum R:R check
+  // Gate 4: Minimum R:R check (use epsilon to avoid floating-point boundary rejection)
   const rr = rewardPerShare / riskPerShare;
-  if (rr < config.minRewardRiskRatio) {
+  if (rr < config.minRewardRiskRatio - 0.005) {
     return reject(
       `R:R ${rr.toFixed(2)} below minimum ${config.minRewardRiskRatio}`,
     );
@@ -101,6 +101,8 @@ export function evaluateRisk(
     stopLossPrice: Math.round(stopLoss * 100) / 100,
     takeProfitPrice: Math.round(takeProfit * 100) / 100,
     timeInForce: "day",
+    confidence: score.confidence,
+    checklistSnapshot: JSON.stringify(score.items),
   };
 
   logger.info(

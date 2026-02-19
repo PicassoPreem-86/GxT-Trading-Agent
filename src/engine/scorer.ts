@@ -125,14 +125,22 @@ const CHECKLIST: WeightConfig[] = [
     id: "dol",
     label: "Draw on Liquidity",
     weight: 8,
-    evaluate: (s) => ({
-      pass: s.dol.target !== null && s.dol.distancePercent < 1,
-      value: s.dol.targetLabel,
-      detail:
-        s.dol.target !== null
-          ? `${s.dol.targetLabel} @ ${s.dol.target.toFixed(2)} (${s.dol.distancePercent}% away)`
-          : "No DOL identified",
-    }),
+    evaluate: (s) => {
+      if (s.dol.target === null || s.dol.distancePercent >= 1) {
+        return {
+          pass: false,
+          value: s.dol.targetLabel,
+          detail: s.dol.target !== null
+            ? `${s.dol.targetLabel} @ ${s.dol.target.toFixed(2)} (${s.dol.distancePercent}% away — too far)`
+            : "No DOL identified",
+        };
+      }
+      return {
+        pass: true,
+        value: s.dol.targetLabel,
+        detail: `${s.dol.targetLabel} @ ${s.dol.target.toFixed(2)} (${s.dol.direction}, ${s.dol.distancePercent}% away)`,
+      };
+    },
   },
   {
     id: "vshape",
@@ -193,6 +201,28 @@ export function scoreSignals(signals: SignalBundle): ScoreResult {
   if (signals.cisd.detected) {
     if (signals.cisd.direction === "bullish") bullishPoints += 10;
     else bearishPoints += 10;
+  }
+
+  // DOL direction validation: penalize if DOL direction mismatches bias
+  const dolItem = items.find((i) => i.id === "dol");
+  const prelimBias: TradeBias =
+    bullishPoints > bearishPoints + 5
+      ? "long"
+      : bearishPoints > bullishPoints + 5
+        ? "short"
+        : "neutral";
+
+  if (dolItem && dolItem.pass && signals.dol.target !== null) {
+    const dolDirectionMatchesBias =
+      (prelimBias === "long" && signals.dol.direction === "above") ||
+      (prelimBias === "short" && signals.dol.direction === "below");
+
+    if (prelimBias !== "neutral" && !dolDirectionMatchesBias) {
+      // DOL direction conflicts with bias — revoke the pass
+      dolItem.pass = false;
+      dolItem.detail += " [direction mismatch with bias]";
+      totalScore -= 8; // Remove the DOL weight
+    }
   }
 
   const confidence = Math.round((totalScore / maxScore) * 100);

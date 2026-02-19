@@ -15,6 +15,8 @@ export default {
         },
         border: "#27272a",
         accent: "#6366f1",
+        warning: "#eab308",
+        gold: "#f59e0b",
       },
       fontFamily: {
         mono: ["JetBrains Mono", "Fira Code", "monospace"],

@@ -11,10 +11,29 @@ const SESSIONS = [
   { name: "Close", start: 15 * 60, end: 16 * 60, color: "#f97316" },
 ];
 
+const MARKET_OPEN = 9 * 60 + 30; // 9:30 ET
+const MARKET_CLOSE = 16 * 60;    // 16:00 ET
+
 function getNYTime() {
   return new Date(
     new Date().toLocaleString("en-US", { timeZone: "America/New_York" }),
   );
+}
+
+function isInSession(totalMin: number, start: number, end: number): boolean {
+  // Handle midnight crossover (e.g. Asia: 20:00 - 24:00)
+  if (start > end) {
+    return totalMin >= start || totalMin < end;
+  }
+  return totalMin >= start && totalMin < end;
+}
+
+function formatCountdown(minutes: number): string {
+  if (minutes < 0) minutes += 24 * 60;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 export function SessionClock() {
@@ -28,8 +47,22 @@ export function SessionClock() {
   const totalMin = now.getHours() * 60 + now.getMinutes();
 
   const currentSession = SESSIONS.find(
-    (s) => totalMin >= s.start && totalMin < s.end,
+    (s) => isInSession(totalMin, s.start, s.end),
   );
+
+  const marketOpen = totalMin >= MARKET_OPEN && totalMin < MARKET_CLOSE;
+
+  // Countdown text
+  let countdown = "";
+  if (marketOpen) {
+    const minsLeft = MARKET_CLOSE - totalMin;
+    countdown = `Closes in ${formatCountdown(minsLeft)}`;
+  } else {
+    // Time until market open
+    let minsUntilOpen = MARKET_OPEN - totalMin;
+    if (minsUntilOpen <= 0) minsUntilOpen += 24 * 60;
+    countdown = `Opens in ${formatCountdown(minsUntilOpen)}`;
+  }
 
   const timeStr = now.toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -39,43 +72,60 @@ export function SessionClock() {
   });
 
   return (
-    <div className="bg-surface-1 rounded-xl border border-border p-5">
-      <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-3">
-        Session Clock
-      </h2>
-
-      <div className="flex items-center gap-4">
-        <div className="text-2xl font-mono font-bold text-zinc-100 tabular-nums">
-          {timeStr}
-        </div>
-        <div className="text-xs text-zinc-500">ET</div>
-        {currentSession ? (
+    <div className="bg-surface-1 rounded-xl border border-border p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+          Session
+        </h2>
+        <div className="flex items-center gap-1.5">
           <div
-            className="text-xs font-semibold px-2 py-1 rounded-full"
+            className={`w-1.5 h-1.5 rounded-full ${
+              marketOpen ? "bg-bull animate-pulse" : "bg-zinc-600"
+            }`}
+          />
+          <span className={`text-[10px] font-semibold ${marketOpen ? "text-bull" : "text-zinc-500"}`}>
+            {marketOpen ? "OPEN" : "CLOSED"}
+          </span>
+        </div>
+      </div>
+
+      {/* Time + session badge */}
+      <div className="flex items-center gap-3 mb-1.5">
+        <span className="text-xl font-mono font-bold text-zinc-100 tabular-nums">
+          {timeStr}
+        </span>
+        <span className="text-[10px] text-zinc-600">ET</span>
+        {currentSession ? (
+          <span
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full ml-auto"
             style={{
               backgroundColor: `${currentSession.color}20`,
               color: currentSession.color,
             }}
           >
             {currentSession.name}
-          </div>
+          </span>
         ) : (
-          <div className="text-xs font-semibold px-2 py-1 rounded-full bg-zinc-800 text-zinc-500">
-            CLOSED
-          </div>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 ml-auto">
+            OFF HOURS
+          </span>
         )}
       </div>
 
-      <div className="mt-3 flex gap-1">
+      {/* Countdown */}
+      <p className="text-[10px] text-zinc-500 mb-2.5">{countdown}</p>
+
+      {/* Session progress */}
+      <div className="flex gap-0.5">
         {SESSIONS.map((s) => {
-          const active = totalMin >= s.start && totalMin < s.end;
+          const active = isInSession(totalMin, s.start, s.end);
           return (
             <div
               key={s.name}
-              className="flex-1 h-1.5 rounded-full transition-all duration-300"
+              className="flex-1 h-1 rounded-full transition-all duration-300"
               style={{
                 backgroundColor: active ? s.color : "#27272a",
-                opacity: active ? 1 : 0.4,
+                opacity: active ? 1 : 0.3,
               }}
               title={s.name}
             />

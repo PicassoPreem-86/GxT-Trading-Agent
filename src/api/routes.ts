@@ -95,6 +95,27 @@ export function createRoutes(
     return c.json(rows);
   });
 
+  // Bar data for chart
+  api.get("/bars/:symbol", (c) => {
+    const symbol = c.req.param("symbol").toUpperCase();
+    const tf = (c.req.query("tf") ?? "5m") as import("../types/candle.js").Timeframe;
+    const limit = parseInt(c.req.query("limit") ?? "100");
+    const bars = barManager.getBars(symbol, tf);
+    const sliced = bars.slice(-limit);
+    return c.json(sliced);
+  });
+
+  // Current quote
+  api.get("/quote/:symbol", async (c) => {
+    const symbol = c.req.param("symbol").toUpperCase();
+    try {
+      const quote = await barManager.getQuote(symbol);
+      return c.json(quote);
+    } catch {
+      return c.json({ price: 0, timestamp: new Date().toISOString() }, 500);
+    }
+  });
+
   // Config (read-only)
   api.get("/config", (c) => {
     return c.json({

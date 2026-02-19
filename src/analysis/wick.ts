@@ -9,7 +9,11 @@ import type { WickSignal } from "../types/signals.js";
 export const wickModule: AnalysisModule<WickSignal> = {
   name: "wick",
   analyze(snapshot: BarSnapshot): WickSignal {
-    const bars = snapshot.bars["15m"];
+    // Prefer 15m bars, fall back to 5m if 15m has insufficient data
+    let bars = snapshot.bars["15m"];
+    if (!bars || bars.length < 15) {
+      bars = snapshot.bars["5m"];
+    }
     if (!bars || bars.length < 15) {
       return {
         topWickRatio: 0,
@@ -45,7 +49,7 @@ export const wickModule: AnalysisModule<WickSignal> = {
         ? current.open - current.low
         : current.close - current.low;
 
-    const atr14 = calculateATR(bars.slice(-15), 14);
+    const atr14 = calculateATR(bars.slice(-30), 14);
     const maxWick = Math.max(topWick, bottomWick);
 
     const topWickRatio = topWick / range;

@@ -1,5 +1,15 @@
 import type { Bar, Timeframe } from "../types/candle.js";
 
+export interface QuoteData {
+  price: number;
+  timestamp: string;
+  change: number;
+  changePercent: number;
+  dayHigh: number;
+  dayLow: number;
+  volume: number;
+}
+
 export interface DataProvider {
   name: string;
   getBars(
@@ -7,7 +17,7 @@ export interface DataProvider {
     timeframe: Timeframe,
     limit: number,
   ): Promise<Bar[]>;
-  getQuote(symbol: string): Promise<{ price: number; timestamp: string }>;
+  getQuote(symbol: string): Promise<QuoteData>;
   subscribe?(
     symbols: string[],
     onBar: (bar: Bar) => void,

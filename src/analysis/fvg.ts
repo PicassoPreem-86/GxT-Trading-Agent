@@ -22,32 +22,41 @@ export const fvgModule: AnalysisModule<FvgSignal> = {
         const bar1 = recent[i + 1];
         const bar2 = recent[i + 2];
 
+        // Minimum gap width: at least 0.05% of price or $0.25, whichever is larger
+        const minGap = Math.max(currentPrice * 0.0005, 0.25);
+
         // Bullish FVG: gap between bar0.high and bar2.low
         if (bar2.low > bar0.high) {
-          const fvg: Fvg = {
-            direction: "bullish",
-            high: bar2.low,
-            low: bar0.high,
-            midpoint: (bar2.low + bar0.high) / 2,
-            timestamp: bar1.timestamp,
-            timeframe: tf,
-            filled: currentPrice <= bar0.high, // price has come back to fill
-          };
-          fvgs.push(fvg);
+          const gapWidth = bar2.low - bar0.high;
+          if (gapWidth >= minGap) {
+            const fvg: Fvg = {
+              direction: "bullish",
+              high: bar2.low,
+              low: bar0.high,
+              midpoint: (bar2.low + bar0.high) / 2,
+              timestamp: bar1.timestamp,
+              timeframe: tf,
+              filled: currentPrice <= bar0.high,
+            };
+            fvgs.push(fvg);
+          }
         }
 
         // Bearish FVG: gap between bar2.high and bar0.low
         if (bar2.high < bar0.low) {
-          const fvg: Fvg = {
-            direction: "bearish",
-            high: bar0.low,
-            low: bar2.high,
-            midpoint: (bar0.low + bar2.high) / 2,
-            timestamp: bar1.timestamp,
-            timeframe: tf,
-            filled: currentPrice >= bar0.low,
-          };
-          fvgs.push(fvg);
+          const gapWidth = bar0.low - bar2.high;
+          if (gapWidth >= minGap) {
+            const fvg: Fvg = {
+              direction: "bearish",
+              high: bar0.low,
+              low: bar2.high,
+              midpoint: (bar0.low + bar2.high) / 2,
+              timestamp: bar1.timestamp,
+              timeframe: tf,
+              filled: currentPrice >= bar0.low,
+            };
+            fvgs.push(fvg);
+          }
         }
       }
     }

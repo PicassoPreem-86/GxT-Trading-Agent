@@ -93,18 +93,20 @@ export class SimulatedBroker implements Broker {
   }
 
   async getAccount(): Promise<AccountState> {
-    const positionValue = Array.from(this.positions.values()).reduce(
-      (sum, p) => sum + p.currentPrice * p.qty,
+    const positions = Array.from(this.positions.values());
+    const unrealizedPnl = positions.reduce(
+      (sum, p) => sum + p.unrealizedPnl,
       0,
     );
 
     return {
       cash: this.cash,
-      equity: this.cash + positionValue,
-      positions: Array.from(this.positions.values()),
-      dayPnl: this.dayPnl,
-      totalPnl: this.totalPnl,
+      equity: this.cash + unrealizedPnl,
+      positions,
+      dayPnl: this.dayPnl + unrealizedPnl,
+      totalPnl: this.totalPnl + unrealizedPnl,
       tradeCount: this.tradeCount,
+      openTradeCount: this.openTrades.size,
       winRate:
         this.tradeCount > 0
           ? Math.round((this.winCount / this.tradeCount) * 100)
@@ -149,10 +151,10 @@ export class SimulatedBroker implements Broker {
       status: "open",
       pnl: null,
       rMultiple: null,
-      confidence: 0,
+      confidence: order.confidence ?? 0,
       openedAt: now,
       closedAt: null,
-      checklistSnapshot: "{}",
+      checklistSnapshot: order.checklistSnapshot ?? "{}",
     };
 
     // Simulate immediate fill at market

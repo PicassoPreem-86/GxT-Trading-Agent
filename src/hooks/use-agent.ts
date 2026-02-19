@@ -12,6 +12,8 @@ export function useAgentState() {
   return useQuery({
     queryKey: ["state"],
     queryFn: () => fetchJson<AgentStateResponse>("/state"),
+    refetchInterval: 5000,
+    retry: 3,
   });
 }
 
@@ -19,6 +21,8 @@ export function useAccount() {
   return useQuery({
     queryKey: ["account"],
     queryFn: () => fetchJson<AccountResponse>("/account"),
+    refetchInterval: 15000,
+    retry: 2,
   });
 }
 
@@ -34,6 +38,8 @@ export function useTrades() {
   return useQuery({
     queryKey: ["trades"],
     queryFn: () => fetchJson<TradeRow[]>("/trades"),
+    refetchInterval: 30000,
+    retry: 2,
   });
 }
 
@@ -42,6 +48,33 @@ export function useConfig() {
     queryKey: ["config"],
     queryFn: () => fetchJson<ConfigResponse>("/config"),
     staleTime: 60000,
+  });
+}
+
+export function useBars(symbol: string, timeframe = "5m") {
+  return useQuery({
+    queryKey: ["bars", symbol, timeframe],
+    queryFn: () => fetchJson<BarData[]>(`/bars/${symbol}?tf=${timeframe}&limit=200`),
+    enabled: !!symbol,
+    refetchInterval: 30000,
+  });
+}
+
+export function useQuote(symbol: string) {
+  return useQuery({
+    queryKey: ["quote", symbol],
+    queryFn: () => fetchJson<QuoteData>(`/quote/${symbol}`),
+    enabled: !!symbol,
+    refetchInterval: 10000,
+  });
+}
+
+export function usePositions() {
+  return useQuery({
+    queryKey: ["positions"],
+    queryFn: () => fetchJson<PositionData[]>("/positions"),
+    refetchInterval: 10000,
+    retry: 2,
   });
 }
 
@@ -117,16 +150,16 @@ interface TradeRow {
   symbol: string;
   side: string;
   qty: number;
-  entry_price: number;
-  exit_price: number | null;
-  stop_loss: number;
-  take_profit: number;
+  entryPrice: number;
+  exitPrice: number | null;
+  stopLoss: number;
+  takeProfit: number;
   status: string;
   pnl: number | null;
-  r_multiple: number | null;
+  rMultiple: number | null;
   confidence: number;
-  opened_at: string;
-  closed_at: string | null;
+  openedAt: string;
+  closedAt: string | null;
 }
 
 interface ConfigResponse {
@@ -138,3 +171,36 @@ interface ConfigResponse {
   maxPositionSize: number;
   minRR: number;
 }
+
+export interface BarData {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  timeframe: string;
+  symbol: string;
+}
+
+export interface QuoteData {
+  price: number;
+  timestamp: string;
+  change?: number;
+  changePercent?: number;
+  dayHigh?: number;
+  dayLow?: number;
+  volume?: number;
+}
+
+export interface PositionData {
+  symbol: string;
+  side: string;
+  qty: number;
+  avgEntryPrice: number;
+  currentPrice: number;
+  unrealizedPnl: number;
+  openedAt: string;
+}
+
+export type { TradeRow };

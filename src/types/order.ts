@@ -12,6 +12,8 @@ export interface OrderRequest {
   takeProfitPrice?: number;
   stopLossPrice?: number;
   timeInForce?: "day" | "gtc";
+  confidence?: number;
+  checklistSnapshot?: string;
 }
 
 export interface OrderResult {
@@ -41,7 +43,7 @@ export interface TradeRecord {
   exitPrice: number | null;
   stopLoss: number;
   takeProfit: number;
-  status: "open" | "closed" | "stopped";
+  status: "open" | "closed" | "stopped" | "cancelled";
   pnl: number | null;
   rMultiple: number | null;
   confidence: number;
@@ -57,5 +59,6 @@ export interface AccountState {
   dayPnl: number;
   totalPnl: number;
   tradeCount: number;
+  openTradeCount: number;
   winRate: number;
 }

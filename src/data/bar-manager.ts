@@ -53,7 +53,7 @@ export class BarManager {
     return bars.length > 0 ? bars[bars.length - 1] : null;
   }
 
-  async getQuote(symbol: string) {
+  async getQuote(symbol: string): Promise<import("./provider.js").QuoteData> {
     return this.provider.getQuote(symbol);
   }
 }

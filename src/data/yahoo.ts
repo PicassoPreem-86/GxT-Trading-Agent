@@ -1,5 +1,6 @@
 import type { DataProvider } from "./provider.js";
 import type { Bar, Timeframe } from "../types/candle.js";
+import { TIMEFRAME_MS } from "../types/candle.js";
 import { logger } from "../logger.js";
 
 const TF_TO_INTERVAL: Record<Timeframe, string> = {
@@ -92,7 +93,13 @@ interface YahooChartQuote {
 interface YahooChartResponse {
   chart?: {
     result?: {
-      meta?: { regularMarketPrice?: number };
+      meta?: {
+        regularMarketPrice?: number;
+        chartPreviousClose?: number;
+        regularMarketDayHigh?: number;
+        regularMarketDayLow?: number;
+        regularMarketVolume?: number;
+      };
       timestamp?: number[];
       indicators?: {
         quote?: {
@@ -162,8 +169,9 @@ export class YahooDataProvider implements DataProvider {
 
       const quotes = parseChartQuotes(data);
 
+      const intervalMs = TIMEFRAME_MS[fetchTf as Timeframe];
       let bars: Bar[] = quotes.map((q) => ({
-        timestamp: q.date.toISOString(),
+        timestamp: floorTimestamp(q.date, intervalMs),
         open: q.open,
         high: q.high,
         low: q.low,
@@ -188,22 +196,51 @@ export class YahooDataProvider implements DataProvider {
 
   async getQuote(
     symbol: string,
-  ): Promise<{ price: number; timestamp: string }> {
+  ): Promise<import("./provider.js").QuoteData> {
     try {
       const data = await yahooFetch(
         `/v8/finance/chart/${encodeURIComponent(symbol)}`,
-        { interval: "1d", range: "1d" },
+        { interval: "1d", range: "5d" },
       );
 
-      const meta = data?.chart?.result?.[0]?.meta;
+      const result = data?.chart?.result?.[0];
+      const meta = result?.meta;
+      const price = meta?.regularMarketPrice ?? 0;
+      const prevClose = meta?.chartPreviousClose ?? 0;
+      const change = prevClose > 0 ? price - prevClose : 0;
+      const changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+      // Get day high/low/volume from meta or fall back to today's bar data
+      const quotes = parseChartQuotes(data);
+      const todayBar = quotes.length > 0 ? quotes[quotes.length - 1] : null;
+
       return {
-        price: meta?.regularMarketPrice ?? 0,
+        price,
         timestamp: new Date().toISOString(),
+        change: Math.round(change * 100) / 100,
+        changePercent: Math.round(changePercent * 100) / 100,
+        dayHigh: meta?.regularMarketDayHigh ?? todayBar?.high ?? 0,
+        dayLow: meta?.regularMarketDayLow ?? todayBar?.low ?? 0,
+        volume: meta?.regularMarketVolume ?? todayBar?.volume ?? 0,
       };
     } catch {
-      return { price: 0, timestamp: new Date().toISOString() };
+      return {
+        price: 0,
+        timestamp: new Date().toISOString(),
+        change: 0,
+        changePercent: 0,
+        dayHigh: 0,
+        dayLow: 0,
+        volume: 0,
+      };
     }
   }
+}
+
+function floorTimestamp(date: Date, intervalMs: number): string {
+  const ms = date.getTime();
+  const floored = ms - (ms % intervalMs);
+  return new Date(floored).toISOString();
 }
 
 function aggregateBars(

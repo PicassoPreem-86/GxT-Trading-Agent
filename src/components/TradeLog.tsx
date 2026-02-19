@@ -1,78 +1,190 @@
-interface TradeRow {
-  id: string;
-  symbol: string;
-  side: string;
-  qty: number;
-  entry_price: number;
-  exit_price: number | null;
-  stop_loss: number;
-  take_profit: number;
-  status: string;
-  pnl: number | null;
-  r_multiple: number | null;
-  confidence: number;
-  opened_at: string;
-  closed_at: string | null;
-}
+import { useState, useMemo } from "react";
+import type { TradeRow } from "../hooks/use-agent";
 
 interface Props {
   trades: TradeRow[];
 }
 
-export function TradeLog({ trades }: Props) {
-  return (
-    <div className="bg-surface-1 rounded-xl border border-border p-5">
-      <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
-        Trade Log
-      </h2>
+type SortKey = "symbol" | "side" | "entryPrice" | "exitPrice" | "pnl" | "rMultiple" | "status" | "duration" | "closedAt";
+type SortDir = "asc" | "desc";
 
-      {trades.length === 0 ? (
-        <p className="text-sm text-zinc-600 text-center py-8">
-          No trades yet
+function formatDuration(openedAt: string, closedAt: string | null): string {
+  if (!closedAt) return "\u2014";
+  const ms = new Date(closedAt).getTime() - new Date(openedAt).getTime();
+  if (ms < 0) return "\u2014";
+  const totalMin = Math.floor(ms / 60000);
+  const days = Math.floor(totalMin / (24 * 60));
+  const hours = Math.floor((totalMin % (24 * 60)) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function getDurationMs(t: TradeRow): number {
+  if (!t.closedAt) return 0;
+  return new Date(t.closedAt).getTime() - new Date(t.openedAt).getTime();
+}
+
+function exportCSV(trades: TradeRow[]) {
+  const headers = ["Symbol", "Side", "Qty", "Entry", "Exit", "P&L", "R Multiple", "Status", "Duration", "Opened", "Closed"];
+  const rows = trades.map((t) => [
+    t.symbol,
+    t.side === "buy" ? "LONG" : "SHORT",
+    t.qty.toString(),
+    t.entryPrice.toFixed(2),
+    t.exitPrice != null ? t.exitPrice.toFixed(2) : "",
+    t.pnl != null ? t.pnl.toFixed(2) : "",
+    t.rMultiple != null ? t.rMultiple.toFixed(1) : "",
+    t.status,
+    formatDuration(t.openedAt, t.closedAt),
+    t.openedAt,
+    t.closedAt ?? "",
+  ]);
+
+  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `trades_${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function TradeLog({ trades }: Props) {
+  const [sortKey, setSortKey] = useState<SortKey>("closedAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const closedTrades = useMemo(
+    () => trades.filter((t) => t.status !== "open"),
+    [trades],
+  );
+
+  const sorted = useMemo(() => {
+    const arr = [...closedTrades];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "symbol": cmp = a.symbol.localeCompare(b.symbol); break;
+        case "side": cmp = a.side.localeCompare(b.side); break;
+        case "entryPrice": cmp = a.entryPrice - b.entryPrice; break;
+        case "exitPrice": cmp = (a.exitPrice ?? 0) - (b.exitPrice ?? 0); break;
+        case "pnl": cmp = (a.pnl ?? 0) - (b.pnl ?? 0); break;
+        case "rMultiple": cmp = (a.rMultiple ?? 0) - (b.rMultiple ?? 0); break;
+        case "status": cmp = a.status.localeCompare(b.status); break;
+        case "duration": cmp = getDurationMs(a) - getDurationMs(b); break;
+        case "closedAt": cmp = new Date(a.closedAt ?? 0).getTime() - new Date(b.closedAt ?? 0).getTime(); break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [closedTrades, sortKey, sortDir]);
+
+  // Summary
+  const summary = useMemo(() => {
+    const total = closedTrades.length;
+    const wins = closedTrades.filter((t) => (t.pnl ?? 0) > 0).length;
+    const losses = total - wins;
+    const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+    const rValues = closedTrades.filter((t) => t.rMultiple != null);
+    const avgR = rValues.length > 0 ? rValues.reduce((s, t) => s + (t.rMultiple ?? 0), 0) / rValues.length : 0;
+    return { total, wins, losses, totalPnl, avgR };
+  }, [closedTrades]);
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
+
+  function SortHeader({ k, label, align }: { k: SortKey; label: string; align?: string }) {
+    const active = sortKey === k;
+    return (
+      <th
+        className={`py-1.5 pr-3 cursor-pointer select-none hover:text-zinc-300 transition-colors ${align === "right" ? "text-right" : "text-left"}`}
+        onClick={() => handleSort(k)}
+      >
+        {label}{" "}
+        {active ? (
+          <span className="text-accent">{sortDir === "asc" ? "\u25B2" : "\u25BC"}</span>
+        ) : (
+          <span className="text-zinc-700">\u25BC</span>
+        )}
+      </th>
+    );
+  }
+
+  return (
+    <div className="bg-surface-1 rounded-xl border border-border p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+          Trade History
+        </h2>
+        {closedTrades.length > 0 && (
+          <button
+            onClick={() => exportCSV(closedTrades)}
+            className="text-[10px] font-semibold px-2.5 py-1 rounded bg-surface-2 text-zinc-400 hover:text-zinc-200 hover:bg-surface-3 transition-colors border border-border"
+          >
+            Export CSV
+          </button>
+        )}
+      </div>
+
+      {closedTrades.length === 0 ? (
+        <p className="text-xs text-zinc-600 text-center py-6">
+          No closed trades yet
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] text-zinc-500 uppercase border-b border-border">
-                <th className="text-left py-2 pr-3">Symbol</th>
-                <th className="text-left py-2 pr-3">Side</th>
-                <th className="text-right py-2 pr-3">Entry</th>
-                <th className="text-right py-2 pr-3">Exit</th>
-                <th className="text-right py-2 pr-3">P&L</th>
-                <th className="text-right py-2 pr-3">R</th>
-                <th className="text-left py-2 pr-3">Status</th>
-                <th className="text-left py-2">Time</th>
+              <tr className="text-[10px] text-zinc-500 uppercase">
+                <SortHeader k="symbol" label="Symbol" />
+                <SortHeader k="side" label="Side" />
+                <SortHeader k="entryPrice" label="Entry" align="right" />
+                <SortHeader k="exitPrice" label="Exit" align="right" />
+                <SortHeader k="pnl" label="P&L" align="right" />
+                <SortHeader k="rMultiple" label="R" align="right" />
+                <SortHeader k="status" label="Status" />
+                <SortHeader k="duration" label="Duration" />
+                <SortHeader k="closedAt" label="Closed" />
               </tr>
             </thead>
             <tbody>
-              {trades.map((t) => (
+              {sorted.map((t, i) => (
                 <tr
                   key={t.id}
-                  className="border-b border-border/50 hover:bg-surface-2/50 transition-colors"
+                  className={`border-t border-border/30 hover:bg-surface-2/50 transition-colors ${
+                    i % 2 === 1 ? "bg-surface-2/20" : ""
+                  }`}
                 >
-                  <td className="py-2 pr-3 font-mono font-semibold text-zinc-200">
+                  <td className="py-1.5 pr-3 font-mono font-semibold text-zinc-200 text-xs">
                     {t.symbol}
                   </td>
-                  <td className="py-2 pr-3">
+                  <td className="py-1.5 pr-3">
                     <span
-                      className={`text-xs px-1.5 py-0.5 rounded ${
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${
                         t.side === "buy"
                           ? "bg-bull-muted text-bull"
                           : "bg-bear-muted text-bear"
                       }`}
                     >
-                      {t.side.toUpperCase()}
+                      {t.side === "buy" ? "LONG" : "SHORT"}
                     </span>
                   </td>
-                  <td className="py-2 pr-3 text-right font-mono text-zinc-400">
-                    ${t.entry_price.toFixed(2)}
+                  <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 text-xs">
+                    ${t.entryPrice.toFixed(2)}
                   </td>
-                  <td className="py-2 pr-3 text-right font-mono text-zinc-400">
-                    {t.exit_price != null ? `$${t.exit_price.toFixed(2)}` : "—"}
+                  <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 text-xs">
+                    {t.exitPrice != null ? `$${t.exitPrice.toFixed(2)}` : "\u2014"}
                   </td>
                   <td
-                    className={`py-2 pr-3 text-right font-mono ${
+                    className={`py-1.5 pr-3 text-right font-mono text-xs font-semibold ${
                       t.pnl == null
                         ? "text-zinc-500"
                         : t.pnl >= 0
@@ -82,37 +194,60 @@ export function TradeLog({ trades }: Props) {
                   >
                     {t.pnl != null
                       ? `${t.pnl >= 0 ? "+" : ""}$${t.pnl.toFixed(2)}`
-                      : "—"}
+                      : "\u2014"}
                   </td>
-                  <td className="py-2 pr-3 text-right font-mono text-zinc-400">
-                    {t.r_multiple != null
-                      ? `${t.r_multiple >= 0 ? "+" : ""}${t.r_multiple.toFixed(1)}R`
-                      : "—"}
+                  <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 text-xs">
+                    {t.rMultiple != null
+                      ? `${t.rMultiple >= 0 ? "+" : ""}${t.rMultiple.toFixed(1)}R`
+                      : "\u2014"}
                   </td>
-                  <td className="py-2 pr-3">
+                  <td className="py-1.5 pr-3">
                     <span
-                      className={`text-xs px-1.5 py-0.5 rounded ${
-                        t.status === "open"
-                          ? "bg-accent/15 text-accent"
-                          : t.status === "stopped"
-                            ? "bg-bear-muted text-bear"
-                            : "bg-zinc-800 text-zinc-400"
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        t.status === "stopped"
+                          ? "bg-bear-muted text-bear"
+                          : "bg-zinc-800 text-zinc-400"
                       }`}
                     >
                       {t.status}
                     </span>
                   </td>
-                  <td className="py-2 text-xs text-zinc-500">
-                    {new Date(t.opened_at).toLocaleString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                  <td className="py-1.5 pr-3 font-mono text-zinc-400 text-xs">
+                    {formatDuration(t.openedAt, t.closedAt)}
+                  </td>
+                  <td className="py-1.5 text-[10px] text-zinc-500">
+                    {t.closedAt
+                      ? new Date(t.closedAt).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "\u2014"}
                   </td>
                 </tr>
               ))}
             </tbody>
+            {/* Summary Row */}
+            <tfoot>
+              <tr className="border-t-2 border-border">
+                <td colSpan={2} className="py-2 pr-3 text-[10px] text-zinc-400">
+                  <span className="font-semibold">{summary.total}</span> trades
+                  {" \u00B7 "}
+                  <span className="text-bull font-semibold">{summary.wins}W</span>
+                  {" / "}
+                  <span className="text-bear font-semibold">{summary.losses}L</span>
+                </td>
+                <td colSpan={2} />
+                <td className={`py-2 pr-3 text-right font-mono text-xs font-semibold ${summary.totalPnl >= 0 ? "text-bull" : "text-bear"}`}>
+                  {summary.totalPnl >= 0 ? "+" : ""}${summary.totalPnl.toFixed(2)}
+                </td>
+                <td className="py-2 pr-3 text-right font-mono text-zinc-400 text-xs">
+                  avg {summary.avgR >= 0 ? "+" : ""}{summary.avgR.toFixed(1)}R
+                </td>
+                <td colSpan={3} />
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}
