@@ -19,22 +19,23 @@ export class BarManager {
   async fetchAll(symbol: string, limit = 100): Promise<BarSnapshot> {
     const bars: Record<string, Bar[]> = {};
 
-    await Promise.all(
-      ANALYSIS_TIMEFRAMES.map(async (tf) => {
-        try {
-          const fetched = await this.provider.getBars(symbol, tf, limit);
-          this.cache.set(this.cacheKey(symbol, tf), fetched);
-          bars[tf] = fetched;
-          logger.debug(
-            { symbol, tf, count: fetched.length },
-            "Fetched bars",
-          );
-        } catch (err) {
-          logger.error({ symbol, tf, err }, "Failed to fetch bars");
-          bars[tf] = this.cache.get(this.cacheKey(symbol, tf)) ?? [];
-        }
-      }),
-    );
+    // Fetch sequentially with small delay to avoid Yahoo rate limits
+    for (const tf of ANALYSIS_TIMEFRAMES) {
+      try {
+        const fetched = await this.provider.getBars(symbol, tf, limit);
+        this.cache.set(this.cacheKey(symbol, tf), fetched);
+        bars[tf] = fetched;
+        logger.debug(
+          { symbol, tf, count: fetched.length },
+          "Fetched bars",
+        );
+        // Delay between requests to avoid Yahoo rate limits
+        await new Promise((r) => setTimeout(r, 1500));
+      } catch (err) {
+        logger.error({ symbol, tf, err }, "Failed to fetch bars");
+        bars[tf] = this.cache.get(this.cacheKey(symbol, tf)) ?? [];
+      }
+    }
 
     return {
       symbol,
