@@ -3,7 +3,7 @@ import type { AgentConfig } from "./types/config.js";
 
 const envSchema = z.object({
   AGENT_MODE: z.enum(["simulation", "live"]).default("simulation"),
-  SYMBOLS: z.string().default("SPY,QQQ"),
+  SYMBOLS: z.string().default("ES=F,NQ=F"),
   ANALYSIS_INTERVAL_MINUTES: z.coerce.number().default(5),
   MAX_DAILY_LOSS_PERCENT: z.coerce.number().default(2),
   MAX_POSITION_SIZE_PERCENT: z.coerce.number().default(5),

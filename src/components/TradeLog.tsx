@@ -5,7 +5,7 @@ interface Props {
   trades: TradeRow[];
 }
 
-type SortKey = "symbol" | "side" | "entryPrice" | "exitPrice" | "pnl" | "rMultiple" | "status" | "duration" | "closedAt";
+type SortKey = "symbol" | "side" | "entryExit" | "pnl" | "rMultiple" | "status" | "duration" | "closedAt";
 type SortDir = "asc" | "desc";
 
 function formatDuration(openedAt: string, closedAt: string | null): string {
@@ -62,6 +62,12 @@ export function TradeLog({ trades }: Props) {
     [trades],
   );
 
+  // Largest absolute P&L for proportional bar sizing
+  const maxAbsPnl = useMemo(() => {
+    const vals = closedTrades.map((t) => Math.abs(t.pnl ?? 0)).filter((v) => v > 0);
+    return vals.length > 0 ? Math.max(...vals) : 1;
+  }, [closedTrades]);
+
   const sorted = useMemo(() => {
     const arr = [...closedTrades];
     arr.sort((a, b) => {
@@ -69,8 +75,7 @@ export function TradeLog({ trades }: Props) {
       switch (sortKey) {
         case "symbol": cmp = a.symbol.localeCompare(b.symbol); break;
         case "side": cmp = a.side.localeCompare(b.side); break;
-        case "entryPrice": cmp = a.entryPrice - b.entryPrice; break;
-        case "exitPrice": cmp = (a.exitPrice ?? 0) - (b.exitPrice ?? 0); break;
+        case "entryExit": cmp = a.entryPrice - b.entryPrice; break;
         case "pnl": cmp = (a.pnl ?? 0) - (b.pnl ?? 0); break;
         case "rMultiple": cmp = (a.rMultiple ?? 0) - (b.rMultiple ?? 0); break;
         case "status": cmp = a.status.localeCompare(b.status); break;
@@ -146,8 +151,7 @@ export function TradeLog({ trades }: Props) {
               <tr className="text-[10px] text-zinc-500 uppercase">
                 <SortHeader k="symbol" label="Symbol" />
                 <SortHeader k="side" label="Side" />
-                <SortHeader k="entryPrice" label="Entry" align="right" />
-                <SortHeader k="exitPrice" label="Exit" align="right" />
+                <SortHeader k="entryExit" label="Entry / Exit" />
                 <SortHeader k="pnl" label="P&L" align="right" />
                 <SortHeader k="rMultiple" label="R" align="right" />
                 <SortHeader k="status" label="Status" />
@@ -156,77 +160,100 @@ export function TradeLog({ trades }: Props) {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((t, i) => (
-                <tr
-                  key={t.id}
-                  className={`border-t border-border/30 hover:bg-surface-2/50 transition-colors ${
-                    i % 2 === 1 ? "bg-surface-2/20" : ""
-                  }`}
-                >
-                  <td className="py-1.5 pr-3 font-mono font-semibold text-zinc-200 text-xs">
-                    {t.symbol}
-                  </td>
-                  <td className="py-1.5 pr-3">
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded ${
-                        t.side === "buy"
-                          ? "bg-bull-muted text-bull"
-                          : "bg-bear-muted text-bear"
-                      }`}
-                    >
-                      {t.side === "buy" ? "LONG" : "SHORT"}
-                    </span>
-                  </td>
-                  <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 text-xs">
-                    ${t.entryPrice.toFixed(2)}
-                  </td>
-                  <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 text-xs">
-                    {t.exitPrice != null ? `$${t.exitPrice.toFixed(2)}` : "\u2014"}
-                  </td>
-                  <td
-                    className={`py-1.5 pr-3 text-right font-mono text-xs font-semibold ${
-                      t.pnl == null
-                        ? "text-zinc-500"
-                        : t.pnl >= 0
-                          ? "text-bull"
-                          : "text-bear"
+              {sorted.map((t, i) => {
+                const pnl = t.pnl ?? 0;
+                const profit = pnl >= 0;
+                const pnlBarWidth = maxAbsPnl > 0 ? (Math.abs(pnl) / maxAbsPnl) * 100 : 0;
+
+                return (
+                  <tr
+                    key={t.id}
+                    className={`border-t border-border/30 hover:bg-surface-2/50 transition-colors ${
+                      i % 2 === 1 ? "bg-surface-2/20" : ""
                     }`}
                   >
-                    {t.pnl != null
-                      ? `${t.pnl >= 0 ? "+" : ""}$${t.pnl.toFixed(2)}`
-                      : "\u2014"}
-                  </td>
-                  <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 text-xs">
-                    {t.rMultiple != null
-                      ? `${t.rMultiple >= 0 ? "+" : ""}${t.rMultiple.toFixed(1)}R`
-                      : "\u2014"}
-                  </td>
-                  <td className="py-1.5 pr-3">
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded ${
-                        t.status === "stopped"
-                          ? "bg-bear-muted text-bear"
-                          : "bg-zinc-800 text-zinc-400"
-                      }`}
-                    >
-                      {t.status}
-                    </span>
-                  </td>
-                  <td className="py-1.5 pr-3 font-mono text-zinc-400 text-xs">
-                    {formatDuration(t.openedAt, t.closedAt)}
-                  </td>
-                  <td className="py-1.5 text-[10px] text-zinc-500">
-                    {t.closedAt
-                      ? new Date(t.closedAt).toLocaleString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "\u2014"}
-                  </td>
-                </tr>
-              ))}
+                    <td className="py-1.5 pr-3 font-mono font-semibold text-zinc-200 text-xs">
+                      {t.symbol}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded ${
+                          t.side === "buy"
+                            ? "bg-bull-muted text-bull"
+                            : "bg-bear-muted text-bear"
+                        }`}
+                      >
+                        {t.side === "buy" ? "LONG" : "SHORT"}
+                      </span>
+                    </td>
+                    {/* Combined Entry -> Exit */}
+                    <td className="py-1.5 pr-3 font-mono text-xs">
+                      <span className="text-zinc-400">${t.entryPrice.toFixed(2)}</span>
+                      <span className="text-zinc-600 mx-1">{"\u2192"}</span>
+                      {t.exitPrice != null ? (
+                        <span className={profit ? "text-bull" : "text-bear"}>
+                          ${t.exitPrice.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-zinc-500">{"\u2014"}</span>
+                      )}
+                    </td>
+                    {/* P&L with bar */}
+                    <td className="py-1.5 pr-3 text-right min-w-[120px]">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${profit ? "bg-bull" : "bg-bear"}`}
+                            style={{ width: `${pnlBarWidth}%` }}
+                          />
+                        </div>
+                        <span
+                          className={`font-mono text-xs font-semibold ${
+                            t.pnl == null
+                              ? "text-zinc-500"
+                              : profit
+                                ? "text-bull"
+                                : "text-bear"
+                          }`}
+                        >
+                          {t.pnl != null
+                            ? `${profit ? "+" : ""}$${t.pnl.toFixed(2)}`
+                            : "\u2014"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-zinc-400 text-xs">
+                      {t.rMultiple != null
+                        ? `${t.rMultiple >= 0 ? "+" : ""}${t.rMultiple.toFixed(1)}R`
+                        : "\u2014"}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded ${
+                          t.status === "stopped"
+                            ? "bg-bear-muted text-bear"
+                            : "bg-zinc-800 text-zinc-400"
+                        }`}
+                      >
+                        {t.status}
+                      </span>
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-zinc-400 text-xs">
+                      {formatDuration(t.openedAt, t.closedAt)}
+                    </td>
+                    <td className="py-1.5 text-[10px] text-zinc-500">
+                      {t.closedAt
+                        ? new Date(t.closedAt).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "\u2014"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
             {/* Summary Row */}
             <tfoot>
@@ -238,7 +265,7 @@ export function TradeLog({ trades }: Props) {
                   {" / "}
                   <span className="text-bear font-semibold">{summary.losses}L</span>
                 </td>
-                <td colSpan={2} />
+                <td />
                 <td className={`py-2 pr-3 text-right font-mono text-xs font-semibold ${summary.totalPnl >= 0 ? "text-bull" : "text-bear"}`}>
                   {summary.totalPnl >= 0 ? "+" : ""}${summary.totalPnl.toFixed(2)}
                 </td>

@@ -40,7 +40,7 @@ export function createRoutes(
 
   // Current signals for a symbol
   api.get("/signals/:symbol", (c) => {
-    const symbol = c.req.param("symbol").toUpperCase();
+    const symbol = decodeURIComponent(c.req.param("symbol")).toUpperCase();
     const result = agentState.lastResults.get(symbol);
 
     if (!result) {
@@ -81,7 +81,7 @@ export function createRoutes(
 
   // Signal history
   api.get("/history/:symbol", (c) => {
-    const symbol = c.req.param("symbol").toUpperCase();
+    const symbol = decodeURIComponent(c.req.param("symbol")).toUpperCase();
     const limit = parseInt(c.req.query("limit") ?? "50");
     const db = getDb();
     const rows = db
@@ -97,7 +97,7 @@ export function createRoutes(
 
   // Bar data for chart
   api.get("/bars/:symbol", (c) => {
-    const symbol = c.req.param("symbol").toUpperCase();
+    const symbol = decodeURIComponent(c.req.param("symbol")).toUpperCase();
     const tf = (c.req.query("tf") ?? "5m") as import("../types/candle.js").Timeframe;
     const limit = parseInt(c.req.query("limit") ?? "100");
     const bars = barManager.getBars(symbol, tf);
@@ -107,7 +107,7 @@ export function createRoutes(
 
   // Current quote
   api.get("/quote/:symbol", async (c) => {
-    const symbol = c.req.param("symbol").toUpperCase();
+    const symbol = decodeURIComponent(c.req.param("symbol")).toUpperCase();
     try {
       const quote = await barManager.getQuote(symbol);
       return c.json(quote);

@@ -1,3 +1,5 @@
+import { isFutures, formatPrice, contractLabel } from "../utils/futures";
+
 interface Props {
   confidence: number;
   bias: string;
@@ -13,6 +15,7 @@ interface Props {
   tradeExecuted: boolean;
   currentPrice?: number;
   scoreThreshold?: number;
+  symbol?: string;
 }
 
 export function TradeDecision({
@@ -24,6 +27,7 @@ export function TradeDecision({
   tradeExecuted,
   currentPrice,
   scoreThreshold,
+  symbol = "",
 }: Props) {
   const barColor =
     confidence >= 70 ? "#22c55e" : confidence >= 50 ? "#eab308" : "#ef4444";
@@ -32,11 +36,12 @@ export function TradeDecision({
   const entryPrice = hasPrice ? currentPrice : 0;
   const stopDistance = risk && hasPrice ? Math.abs(entryPrice - risk.stopLoss) : 0;
   const targetDistance = risk && hasPrice ? Math.abs(risk.takeProfit - entryPrice) : 0;
-  const rr = stopDistance > 0 ? (targetDistance / stopDistance).toFixed(2) : "—";
+  const rr = stopDistance > 0 ? (targetDistance / stopDistance).toFixed(2) : "\u2014";
   const stopPct = hasPrice && risk ? ((risk.stopLoss - entryPrice) / entryPrice * 100).toFixed(2) : "0";
   const targetPct = hasPrice && risk ? ((risk.takeProfit - entryPrice) / entryPrice * 100).toFixed(2) : "0";
 
   const displayReason = reason || "Awaiting risk analysis...";
+  const sizeLabel = contractLabel(symbol);
 
   return (
     <div
@@ -112,21 +117,21 @@ export function TradeDecision({
       {risk && risk.approved && hasPrice ? (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-            <Row label="Entry" value={`$${entryPrice.toFixed(2)}`} />
+            <Row label="Entry" value={formatPrice(entryPrice, symbol)} />
             <Row label="R:R" value={`1:${rr}`} accent />
             <Row
               label="Stop"
-              value={`$${risk.stopLoss.toFixed(2)}`}
+              value={formatPrice(risk.stopLoss, symbol)}
               sub={`${stopPct}%`}
               color="text-bear"
             />
             <Row
               label="Target"
-              value={`$${risk.takeProfit.toFixed(2)}`}
+              value={formatPrice(risk.takeProfit, symbol)}
               sub={`+${targetPct}%`}
               color="text-bull"
             />
-            <Row label="Size" value={`${risk.positionSize} shares`} />
+            <Row label="Size" value={`${risk.positionSize} ${sizeLabel}`} />
           </div>
         </div>
       ) : risk && risk.approved && !hasPrice ? (

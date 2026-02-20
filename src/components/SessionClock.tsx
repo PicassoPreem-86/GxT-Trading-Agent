@@ -1,18 +1,22 @@
 import { useState, useEffect } from "react";
 
 const SESSIONS = [
-  { name: "Asia", start: 20 * 60, end: 24 * 60, color: "#6366f1" },
-  { name: "London", start: 3 * 60, end: 5 * 60, color: "#8b5cf6" },
-  { name: "Pre-Mkt", start: 7 * 60, end: 9 * 60 + 30, color: "#a78bfa" },
+  { name: "Globex Open", start: 18 * 60, end: 20 * 60, color: "#f97316" },
+  { name: "Asia", start: 20 * 60, end: 3 * 60, color: "#6366f1" },
+  { name: "London", start: 3 * 60, end: 8 * 60, color: "#8b5cf6" },
+  { name: "Pre-Mkt", start: 8 * 60, end: 9 * 60 + 30, color: "#a78bfa" },
   { name: "NY Open", start: 9 * 60 + 30, end: 10 * 60, color: "#22c55e" },
   { name: "NY AM", start: 10 * 60, end: 12 * 60, color: "#22c55e" },
   { name: "Lunch", start: 12 * 60, end: 13 * 60 + 30, color: "#eab308" },
   { name: "NY PM", start: 13 * 60 + 30, end: 15 * 60, color: "#22c55e" },
   { name: "Close", start: 15 * 60, end: 16 * 60, color: "#f97316" },
+  { name: "Settle", start: 16 * 60, end: 17 * 60, color: "#71717a" },
 ];
 
-const MARKET_OPEN = 9 * 60 + 30; // 9:30 ET
-const MARKET_CLOSE = 16 * 60;    // 16:00 ET
+const RTH_OPEN = 9 * 60 + 30;  // 9:30 ET
+const RTH_CLOSE = 16 * 60;     // 16:00 ET
+const DAILY_BREAK_START = 17 * 60; // 5pm ET
+const DAILY_BREAK_END = 18 * 60;   // 6pm ET
 
 function getNYTime() {
   return new Date(
@@ -21,7 +25,6 @@ function getNYTime() {
 }
 
 function isInSession(totalMin: number, start: number, end: number): boolean {
-  // Handle midnight crossover (e.g. Asia: 20:00 - 24:00)
   if (start > end) {
     return totalMin >= start || totalMin < end;
   }
@@ -36,6 +39,20 @@ function formatCountdown(minutes: number): string {
   return `${m}m`;
 }
 
+function isWeekend(ny: Date): boolean {
+  const day = ny.getDay();
+  const totalMin = ny.getHours() * 60 + ny.getMinutes();
+  // Weekend: Friday 5pm through Sunday 6pm
+  if (day === 6) return true; // All Saturday
+  if (day === 0 && totalMin < DAILY_BREAK_END) return true; // Sunday before 6pm
+  if (day === 5 && totalMin >= DAILY_BREAK_START) return true; // Friday after 5pm
+  return false;
+}
+
+function isDailyBreak(totalMin: number): boolean {
+  return totalMin >= DAILY_BREAK_START && totalMin < DAILY_BREAK_END;
+}
+
 export function SessionClock() {
   const [now, setNow] = useState(getNYTime());
 
@@ -45,23 +62,55 @@ export function SessionClock() {
   }, []);
 
   const totalMin = now.getHours() * 60 + now.getMinutes();
+  const weekend = isWeekend(now);
+  const dailyBreak = !weekend && isDailyBreak(totalMin);
+  const rth = totalMin >= RTH_OPEN && totalMin < RTH_CLOSE;
+  const futuresOpen = !weekend && !dailyBreak;
 
-  const currentSession = SESSIONS.find(
-    (s) => isInSession(totalMin, s.start, s.end),
-  );
+  const currentSession = futuresOpen
+    ? SESSIONS.find((s) => isInSession(totalMin, s.start, s.end))
+    : undefined;
 
-  const marketOpen = totalMin >= MARKET_OPEN && totalMin < MARKET_CLOSE;
-
-  // Countdown text
-  let countdown = "";
-  if (marketOpen) {
-    const minsLeft = MARKET_CLOSE - totalMin;
-    countdown = `Closes in ${formatCountdown(minsLeft)}`;
+  // Market status
+  let status: string;
+  let statusColor: string;
+  if (weekend) {
+    status = "WEEKEND";
+    statusColor = "text-zinc-500";
+  } else if (dailyBreak) {
+    status = "DAILY BREAK";
+    statusColor = "text-yellow-500";
+  } else if (rth) {
+    status = "RTH";
+    statusColor = "text-bull";
   } else {
-    // Time until market open
-    let minsUntilOpen = MARKET_OPEN - totalMin;
-    if (minsUntilOpen <= 0) minsUntilOpen += 24 * 60;
-    countdown = `Opens in ${formatCountdown(minsUntilOpen)}`;
+    status = "FUTURES OPEN";
+    statusColor = "text-accent";
+  }
+
+  // Countdown
+  let countdown = "";
+  if (weekend) {
+    // Time until Sunday 6pm
+    const day = now.getDay();
+    let daysUntilSunday = day === 0 ? 0 : 7 - day;
+    if (day === 6) daysUntilSunday = 1;
+    let minsUntilOpen = daysUntilSunday * 24 * 60 + (DAILY_BREAK_END - totalMin);
+    if (minsUntilOpen < 0) minsUntilOpen += 7 * 24 * 60;
+    const hours = Math.floor(minsUntilOpen / 60);
+    const mins = minsUntilOpen % 60;
+    countdown = `Opens in ${hours}h ${mins}m`;
+  } else if (dailyBreak) {
+    const minsLeft = DAILY_BREAK_END - totalMin;
+    countdown = `Resumes in ${formatCountdown(minsLeft)}`;
+  } else if (rth) {
+    const minsLeft = RTH_CLOSE - totalMin;
+    countdown = `RTH closes in ${formatCountdown(minsLeft)}`;
+  } else {
+    // Time until RTH opens
+    let minsUntilRTH = RTH_OPEN - totalMin;
+    if (minsUntilRTH <= 0) minsUntilRTH += 24 * 60;
+    countdown = `RTH in ${formatCountdown(minsUntilRTH)}`;
   }
 
   const timeStr = now.toLocaleTimeString("en-US", {
@@ -80,11 +129,11 @@ export function SessionClock() {
         <div className="flex items-center gap-1.5">
           <div
             className={`w-1.5 h-1.5 rounded-full ${
-              marketOpen ? "bg-bull animate-pulse" : "bg-zinc-600"
+              futuresOpen ? "bg-bull animate-pulse" : "bg-zinc-600"
             }`}
           />
-          <span className={`text-[10px] font-semibold ${marketOpen ? "text-bull" : "text-zinc-500"}`}>
-            {marketOpen ? "OPEN" : "CLOSED"}
+          <span className={`text-[10px] font-semibold ${statusColor}`}>
+            {status}
           </span>
         </div>
       </div>
@@ -107,7 +156,7 @@ export function SessionClock() {
           </span>
         ) : (
           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 ml-auto">
-            OFF HOURS
+            {weekend ? "WEEKEND" : dailyBreak ? "BREAK" : "OFF HOURS"}
           </span>
         )}
       </div>
@@ -118,7 +167,7 @@ export function SessionClock() {
       {/* Session progress */}
       <div className="flex gap-0.5">
         {SESSIONS.map((s) => {
-          const active = isInSession(totalMin, s.start, s.end);
+          const active = futuresOpen && isInSession(totalMin, s.start, s.end);
           return (
             <div
               key={s.name}

@@ -5,10 +5,15 @@ import {
   type ISeriesApi,
   type IPriceLine,
   type CandlestickData,
+  type SeriesMarker,
+  type Time,
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
-import { useBars, useQuote, type BarData } from "../hooks/use-agent";
+import { useBars, useQuote, type BarData, type TradeRow } from "../hooks/use-agent";
+import { isFutures, formatPrice } from "../utils/futures";
+
+type UTCTimestamp = import("lightweight-charts").UTCTimestamp;
 
 interface Props {
   symbol: string;
@@ -16,6 +21,7 @@ interface Props {
   onTimeframeChange: (tf: string) => void;
   keyLevels?: { label: string; price: number; type: string }[];
   fvgs?: { direction: string; high: number; low: number; filled: boolean }[];
+  trades?: TradeRow[];
 }
 
 export const TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"];
@@ -28,7 +34,7 @@ function formatVolume(vol: number): string {
 
 function barToChartData(bar: BarData): CandlestickData {
   return {
-    time: (new Date(bar.timestamp).getTime() / 1000) as import("lightweight-charts").UTCTimestamp,
+    time: (new Date(bar.timestamp).getTime() / 1000) as UTCTimestamp,
     open: bar.open,
     high: bar.high,
     low: bar.low,
@@ -36,26 +42,32 @@ function barToChartData(bar: BarData): CandlestickData {
   };
 }
 
-export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fvgs }: Props) {
+function toNYTime(date: Date): Date {
+  return new Date(date.toLocaleString("en-US", { timeZone: "America/New_York" }));
+}
+
+export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fvgs, trades }: Props) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const priceLineRefs = useRef<IPriceLine[]>([]);
   const currentPriceLineRef = useRef<IPriceLine | null>(null);
 
   const { data: bars, isLoading: barsLoading } = useBars(symbol, timeframe);
   const { data: quote } = useQuote(symbol);
   const hasBars = bars && bars.length > 0;
+  const futuresMode = isFutures(symbol);
 
   const initChart = useCallback(() => {
     if (!chartContainerRef.current) return;
 
-    // Clean up previous chart
     try {
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
         candleSeriesRef.current = null;
+        volumeSeriesRef.current = null;
         priceLineRefs.current = [];
       }
     } catch { /* ignore cleanup errors */ }
@@ -77,7 +89,7 @@ export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fv
       },
       rightPriceScale: {
         borderColor: "#27272a",
-        scaleMargins: { top: 0.1, bottom: 0.1 },
+        scaleMargins: { top: 0.1, bottom: 0.25 },
       },
       timeScale: {
         borderColor: "#27272a",
@@ -96,10 +108,19 @@ export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fv
       wickDownColor: "#ef444480",
     });
 
+    const volumeSeries = chart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "volume",
+    });
+
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
+    });
+
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
 
-    // Responsive
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
@@ -114,13 +135,12 @@ export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fv
     };
   }, []);
 
-  // Init chart on mount
   useEffect(() => {
     const cleanup = initChart();
     return () => cleanup?.();
   }, [initChart]);
 
-  // Update candle data
+  // Update candle + volume data
   useEffect(() => {
     if (!candleSeriesRef.current || !bars?.length) return;
 
@@ -128,7 +148,6 @@ export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fv
       .map(barToChartData)
       .sort((a, b) => (a.time as number) - (b.time as number));
 
-    // Deduplicate by timestamp
     const seen = new Set<number>();
     const unique = chartData.filter((d) => {
       const t = d.time as number;
@@ -138,14 +157,108 @@ export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fv
     });
 
     candleSeriesRef.current.setData(unique);
+
+    // Volume data
+    if (volumeSeriesRef.current) {
+      const volSeen = new Set<number>();
+      const volumeData = bars
+        .map((bar) => ({
+          time: (new Date(bar.timestamp).getTime() / 1000) as UTCTimestamp,
+          value: bar.volume,
+          color: bar.close >= bar.open ? "#22c55e30" : "#ef444430",
+        }))
+        .sort((a, b) => (a.time as number) - (b.time as number))
+        .filter((d) => {
+          const t = d.time as number;
+          if (volSeen.has(t)) return false;
+          volSeen.add(t);
+          return true;
+        });
+
+      volumeSeriesRef.current.setData(volumeData);
+    }
+
     chartRef.current?.timeScale().fitContent();
   }, [bars]);
 
-  // Update key level lines
+  // Trade entry/exit markers + session boundary markers
+  useEffect(() => {
+    if (!candleSeriesRef.current || !bars?.length) return;
+
+    const markers: SeriesMarker<Time>[] = [];
+
+    // Session boundary markers from bar data
+    const markedDays = new Set<string>();
+    for (const bar of bars) {
+      const d = new Date(bar.timestamp);
+      const ny = toNYTime(d);
+      const dayKey = `${ny.getFullYear()}-${ny.getMonth()}-${ny.getDate()}`;
+      const h = ny.getHours();
+      const m = ny.getMinutes();
+      const totalMin = h * 60 + m;
+
+      const rthKey = `${dayKey}-rth`;
+      if (!markedDays.has(rthKey) && totalMin >= 9 * 60 + 30 && totalMin < 10 * 60) {
+        markedDays.add(rthKey);
+        markers.push({
+          time: (d.getTime() / 1000) as UTCTimestamp,
+          position: "aboveBar",
+          color: "#22c55e60",
+          shape: "square",
+          text: "RTH",
+        });
+      }
+
+      const closeKey = `${dayKey}-close`;
+      if (!markedDays.has(closeKey) && totalMin >= 16 * 60 && totalMin < 16 * 60 + 15) {
+        markedDays.add(closeKey);
+        markers.push({
+          time: (d.getTime() / 1000) as UTCTimestamp,
+          position: "aboveBar",
+          color: "#f9731660",
+          shape: "square",
+          text: "ETH",
+        });
+      }
+    }
+
+    // Trade markers
+    if (trades?.length) {
+      for (const trade of trades) {
+        const entryTime = (new Date(trade.openedAt).getTime() / 1000) as UTCTimestamp;
+        const isLong = trade.side === "buy";
+
+        markers.push({
+          time: entryTime,
+          position: isLong ? "belowBar" : "aboveBar",
+          color: isLong ? "#22c55e" : "#ef4444",
+          shape: isLong ? "arrowUp" : "arrowDown",
+          text: `${isLong ? "L" : "S"} ${formatPrice(trade.entryPrice, symbol)}`,
+        });
+
+        if (trade.closedAt && trade.exitPrice != null) {
+          const exitTime = (new Date(trade.closedAt).getTime() / 1000) as UTCTimestamp;
+          const profit = (trade.pnl ?? 0) >= 0;
+
+          markers.push({
+            time: exitTime,
+            position: isLong ? "aboveBar" : "belowBar",
+            color: profit ? "#22c55e" : "#ef4444",
+            shape: "circle",
+            text: `${profit ? "+" : ""}$${(trade.pnl ?? 0).toFixed(0)}`,
+          });
+        }
+      }
+    }
+
+    markers.sort((a, b) => (a.time as number) - (b.time as number));
+    candleSeriesRef.current.setMarkers(markers);
+  }, [trades, bars, symbol]);
+
+  // Key level lines
   useEffect(() => {
     if (!candleSeriesRef.current) return;
 
-    // Remove old price lines
     for (const line of priceLineRefs.current) {
       candleSeriesRef.current.removePriceLine(line);
     }
@@ -180,23 +293,27 @@ export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fv
   useEffect(() => {
     if (!candleSeriesRef.current || !quote?.price) return;
 
-    // Remove old price line
     if (currentPriceLineRef.current) {
       try {
         candleSeriesRef.current.removePriceLine(currentPriceLineRef.current);
-      } catch { /* ignore if already removed */ }
+      } catch { /* ignore */ }
     }
 
-    // Create new price line at current quote price
     currentPriceLineRef.current = candleSeriesRef.current.createPriceLine({
       price: quote.price,
-      color: '#6366f1',
+      color: "#6366f1",
       lineWidth: 1,
       lineStyle: 2,
       axisLabelVisible: true,
-      title: '',
+      title: "",
     });
   }, [quote]);
+
+  const priceDisplay = quote?.price
+    ? futuresMode
+      ? quote.price.toFixed(2)
+      : `$${quote.price.toFixed(2)}`
+    : null;
 
   return (
     <div className="bg-surface-1 rounded-xl border border-border flex flex-col overflow-hidden">
@@ -204,32 +321,32 @@ export function PriceChart({ symbol, timeframe, onTimeframeChange, keyLevels, fv
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-zinc-200 font-mono">{symbol}</span>
-          {quote?.price ? (
+          {priceDisplay ? (
             <>
               <span className="text-sm font-mono text-zinc-400">
-                ${quote.price.toFixed(2)}
+                {priceDisplay}
               </span>
-              {quote.change != null && (
+              {quote!.change != null && (
                 <span
                   className={`text-xs font-mono font-semibold ${
-                    quote.change >= 0 ? "text-bull" : "text-bear"
+                    quote!.change! >= 0 ? "text-bull" : "text-bear"
                   }`}
                 >
-                  {quote.change >= 0 ? "+" : ""}${quote.change.toFixed(2)}
+                  {quote!.change! >= 0 ? "+" : ""}{futuresMode ? quote!.change!.toFixed(2) : `$${quote!.change!.toFixed(2)}`}
                 </span>
               )}
-              {quote.changePercent != null && (
+              {quote!.changePercent != null && (
                 <span
                   className={`text-xs font-mono ${
-                    quote.changePercent >= 0 ? "text-bull" : "text-bear"
+                    quote!.changePercent! >= 0 ? "text-bull" : "text-bear"
                   }`}
                 >
-                  ({quote.changePercent >= 0 ? "+" : ""}{quote.changePercent.toFixed(2)}%)
+                  ({quote!.changePercent! >= 0 ? "+" : ""}{quote!.changePercent!.toFixed(2)}%)
                 </span>
               )}
-              {quote.volume != null && quote.volume > 0 && (
+              {quote!.volume != null && quote!.volume! > 0 && (
                 <span className="text-[10px] font-mono text-zinc-500">
-                  Vol: {formatVolume(quote.volume)}
+                  Vol: {formatVolume(quote!.volume!)}
                 </span>
               )}
             </>

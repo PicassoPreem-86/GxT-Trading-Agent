@@ -16,6 +16,7 @@ export interface DailyProfileSignal {
 }
 
 export type SessionName =
+  | "globex"
   | "asia"
   | "london"
   | "ny_premarket"
@@ -23,7 +24,9 @@ export type SessionName =
   | "ny_am"
   | "ny_lunch"
   | "ny_pm"
-  | "ny_close";
+  | "ny_close"
+  | "settle"
+  | "daily_break";
 
 export interface SessionTimeSignal {
   currentSession: SessionName | "closed";

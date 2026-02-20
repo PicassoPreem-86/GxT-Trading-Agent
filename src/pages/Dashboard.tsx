@@ -19,8 +19,22 @@ import { PositionsBar } from "../components/PositionsBar";
 import { AlertSystem } from "../components/AlertSystem";
 import { KeyboardShortcutsHelp } from "../components/KeyboardShortcutsHelp";
 
+function relativeTime(isoStr: string): string {
+  const ms = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m ago`;
+}
+
 export function Dashboard() {
-  const { data: state, isLoading: stateLoading, isError: stateError } = useAgentState();
+  const {
+    data: state,
+    isLoading: stateLoading,
+    isError: stateError,
+    dataUpdatedAt,
+  } = useAgentState();
   const { data: account, isError: accountError } = useAccount();
   const { data: trades, isError: tradesError } = useTrades();
   const { data: config } = useConfig();
@@ -39,11 +53,18 @@ export function Dashboard() {
   const muted = useAlerts((s) => s.muted);
   const toggleMute = useAlerts((s) => s.toggleMute);
 
-  // Track previous values for alert detection
   const prevScoreRef = useRef<number | null>(null);
   const prevTradeCountRef = useRef<number | null>(null);
 
-  // Watch for score crossing threshold
+  // Connection health
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, []);
+  const dataAgeMs = dataUpdatedAt ? now - dataUpdatedAt : 0;
+  const isStale = dataAgeMs > 30000; // >30s since last successful fetch
+
   useEffect(() => {
     if (!result?.score) return;
     const score = result.score.confidence;
@@ -60,7 +81,6 @@ export function Dashboard() {
     prevScoreRef.current = score;
   }, [result?.score, config?.scoreThreshold, selected, addAlert]);
 
-  // Watch for trade execution
   useEffect(() => {
     if (!trades) return;
     const count = trades.length;
@@ -84,7 +104,6 @@ export function Dashboard() {
 
   const toggleHelp = useCallback(() => setHelpOpen((v) => !v), []);
 
-  // Keyboard shortcuts
   useKeyboardShortcuts({
     symbols,
     setActiveSymbol,
@@ -94,13 +113,14 @@ export function Dashboard() {
     toggleHelp,
   });
 
-  // Extract key levels + FVGs from signals for chart overlays
   const keyLevels = signals?.signals?.keyLevels
     ? (signals.signals.keyLevels as { levels: { label: string; price: number; type: string }[] }).levels
     : undefined;
   const fvgs = signals?.signals?.fvg
     ? (signals.signals.fvg as { fvgs: { direction: string; high: number; low: number; filled: boolean }[] }).fvgs
     : undefined;
+
+  const symbolTrades = trades?.filter((t) => t.symbol === selected);
 
   if (stateLoading) {
     return (
@@ -134,7 +154,6 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-surface-0">
-      {/* Toast System */}
       <AlertSystem />
       <KeyboardShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
 
@@ -147,9 +166,7 @@ export function Dashboard() {
                 <span className="text-accent font-bold text-xs">G</span>
               </div>
               <div>
-                <h1 className="text-sm font-bold text-zinc-100">
-                  GxT Agent
-                </h1>
+                <h1 className="text-sm font-bold text-zinc-100">GxT Agent</h1>
               </div>
             </div>
 
@@ -168,18 +185,29 @@ export function Dashboard() {
               </span>
             </div>
 
+            {/* Last run — relative time, 24h format */}
             {state?.lastRunAt && (
-              <span className="text-[10px] text-zinc-600">
-                {new Date(state.lastRunAt).toLocaleTimeString("en-US", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+              <span className="text-[10px] text-zinc-600" title={state.lastRunAt}>
+                {relativeTime(state.lastRunAt)}
               </span>
             )}
+
+            {/* Connection health */}
+            <div className="flex items-center gap-1">
+              <div
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isStale ? "bg-yellow-500" : "bg-bull"
+                }`}
+              />
+              <span
+                className={`text-[10px] ${isStale ? "text-yellow-500" : "text-zinc-600"}`}
+              >
+                {isStale ? "Delayed" : "Live"}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Mute button */}
             <button
               onClick={toggleMute}
               className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-colors ${
@@ -192,7 +220,6 @@ export function Dashboard() {
               {muted ? "\uD83D\uDD07" : "\uD83D\uDD0A"}
             </button>
 
-            {/* Help button */}
             <button
               onClick={toggleHelp}
               className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold bg-surface-2 text-zinc-500 hover:text-zinc-200 transition-colors"
@@ -201,7 +228,6 @@ export function Dashboard() {
               ?
             </button>
 
-            {/* Symbol tabs */}
             {symbols.length > 0 && (
               <div className="flex gap-1.5">
                 {symbols.map((sym, idx) => (
@@ -225,9 +251,7 @@ export function Dashboard() {
       </header>
 
       <main className="max-w-[1400px] mx-auto px-6 py-4 space-y-4">
-        {/* Two-column layout: Chart + Sidebar */}
         <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] xl:grid-cols-[1fr_360px] gap-4">
-          {/* Left: Price Chart */}
           <div className="min-w-0">
             <PriceChart
               symbol={selected}
@@ -235,12 +259,11 @@ export function Dashboard() {
               onTimeframeChange={setTimeframe}
               keyLevels={keyLevels}
               fvgs={fvgs}
+              trades={symbolTrades}
             />
           </div>
 
-          {/* Right: Sidebar stack */}
           <div className="flex flex-col gap-4">
-            {/* Trade Decision */}
             {result?.score ? (
               <TradeDecision
                 confidence={result.score.confidence}
@@ -251,6 +274,7 @@ export function Dashboard() {
                 tradeExecuted={result.tradeExecuted}
                 currentPrice={quote?.price}
                 scoreThreshold={config?.scoreThreshold}
+                symbol={selected}
               />
             ) : (
               <div className="bg-surface-1 rounded-xl border border-border p-4 flex items-center justify-center min-h-[120px]">
@@ -258,10 +282,8 @@ export function Dashboard() {
               </div>
             )}
 
-            {/* Session Clock */}
             <SessionClock />
 
-            {/* Account Summary */}
             {accountError ? (
               <div className="bg-surface-1 rounded-xl border border-border p-4">
                 <p className="text-xs text-bear text-center">Failed to load account data</p>
@@ -275,14 +297,12 @@ export function Dashboard() {
                 tradeCount={account.tradeCount}
                 winRate={account.winRate}
                 maxDailyLoss={config?.maxDailyLoss}
+                trades={trades}
               />
             ) : null}
           </div>
         </div>
 
-        {/* Full-width sections below */}
-
-        {/* Checklist */}
         {result?.score?.items && (
           <Checklist
             items={result.score.items}
@@ -291,10 +311,8 @@ export function Dashboard() {
           />
         )}
 
-        {/* Open Positions */}
-        <PositionsBar symbols={symbols} />
+        <PositionsBar symbols={symbols} trades={trades} />
 
-        {/* Trade History */}
         {tradesError ? (
           <div className="bg-surface-1 rounded-xl border border-border p-4">
             <p className="text-xs text-bear text-center">Failed to load trade history</p>

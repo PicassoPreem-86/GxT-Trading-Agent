@@ -11,14 +11,19 @@ function getNYTime(): Date {
 function isMarketHours(): boolean {
   const ny = getNYTime();
   const day = ny.getDay();
-  if (day === 0 || day === 6) return false; // Weekend
-
   const hours = ny.getHours();
   const minutes = ny.getMinutes();
   const totalMin = hours * 60 + minutes;
 
-  // Pre-market through close: 7:00 AM - 4:00 PM ET
-  return totalMin >= 420 && totalMin <= 960;
+  // Weekend: Friday 5pm through Sunday 6pm
+  if (day === 6) return false; // All Saturday
+  if (day === 0 && totalMin < 18 * 60) return false; // Sunday before 6pm
+  if (day === 5 && totalMin >= 17 * 60) return false; // Friday after 5pm
+
+  // Daily break: 5-6pm ET
+  if (totalMin >= 17 * 60 && totalMin < 18 * 60) return false;
+
+  return true;
 }
 
 export function scheduleAgent(
@@ -42,7 +47,7 @@ export function scheduleAgent(
 
   logger.info(
     { interval: `${intervalMinutes}m`, cron: cronExpr },
-    "Agent scheduler started",
+    "Agent scheduler started (futures hours: Sun 6pm - Fri 5pm ET)",
   );
 
   return task;

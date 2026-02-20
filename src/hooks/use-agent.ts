@@ -29,7 +29,7 @@ export function useAccount() {
 export function useSignals(symbol: string) {
   return useQuery({
     queryKey: ["signals", symbol],
-    queryFn: () => fetchJson<SignalsResponse>(`/signals/${symbol}`),
+    queryFn: () => fetchJson<SignalsResponse>(`/signals/${encodeURIComponent(symbol)}`),
     enabled: !!symbol,
   });
 }
@@ -54,7 +54,7 @@ export function useConfig() {
 export function useBars(symbol: string, timeframe = "5m") {
   return useQuery({
     queryKey: ["bars", symbol, timeframe],
-    queryFn: () => fetchJson<BarData[]>(`/bars/${symbol}?tf=${timeframe}&limit=200`),
+    queryFn: () => fetchJson<BarData[]>(`/bars/${encodeURIComponent(symbol)}?tf=${timeframe}&limit=200`),
     enabled: !!symbol,
     refetchInterval: 30000,
   });
@@ -63,7 +63,7 @@ export function useBars(symbol: string, timeframe = "5m") {
 export function useQuote(symbol: string) {
   return useQuery({
     queryKey: ["quote", symbol],
-    queryFn: () => fetchJson<QuoteData>(`/quote/${symbol}`),
+    queryFn: () => fetchJson<QuoteData>(`/quote/${encodeURIComponent(symbol)}`),
     enabled: !!symbol,
     refetchInterval: 10000,
   });
