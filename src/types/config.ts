@@ -7,6 +7,7 @@ export interface AgentConfig {
   minRewardRiskRatio: number;
   simStartingCapital: number;
   scoreThreshold: number;
+  blockedSessions: string[];
   apiPort: number;
   alpacaApiKey?: string;
   alpacaSecretKey?: string;

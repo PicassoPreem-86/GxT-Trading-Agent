@@ -78,11 +78,36 @@ export async function runPipeline(
     "Scored",
   );
 
-  // Step 4: Risk evaluation
+  // Step 4: Session filter — reject trades in blocked sessions
+  if (
+    config.blockedSessions.length > 0 &&
+    config.blockedSessions.includes(signals.sessionTime.currentSession)
+  ) {
+    logger.info(
+      { symbol, session: signals.sessionTime.currentSession },
+      "Blocked session — skipping trade evaluation",
+    );
+    return {
+      symbol,
+      signals,
+      score,
+      risk: {
+        approved: false,
+        reason: `Session ${signals.sessionTime.currentSession} is blocked`,
+        order: null,
+        stopLoss: 0,
+        takeProfit: 0,
+        positionSize: 0,
+      },
+      tradeExecuted: false,
+    };
+  }
+
+  // Step 5: Risk evaluation
   const account = await broker.getAccount();
   const risk = evaluateRisk(score, account, snapshot, config);
 
-  // Step 5: Execute if approved
+  // Step 6: Execute if approved
   let tradeExecuted = false;
   if (risk.approved && risk.order) {
     const result = await broker.placeOrder(risk.order);

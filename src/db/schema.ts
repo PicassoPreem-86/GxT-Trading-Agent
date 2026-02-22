@@ -49,3 +49,19 @@ export const bars = sqliteTable("bars", {
   close: real("close").notNull(),
   volume: real("volume").notNull(),
 });
+
+export const backtestRuns = sqliteTable("backtest_runs", {
+  id: text("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date").notNull(),
+  timeframe: text("timeframe").notNull(),
+  initialCapital: real("initial_capital").notNull(),
+  scoreThreshold: real("score_threshold").notNull(),
+  maxDailyLoss: real("max_daily_loss").notNull(),
+  status: text("status").notNull().default("pending"), // pending | running | completed | failed
+  progress: real("progress").notNull().default(0),
+  result: text("result"), // JSON blob
+  createdAt: text("created_at").notNull(),
+  completedAt: text("completed_at"),
+});

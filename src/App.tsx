@@ -1,5 +1,7 @@
 import { Component, type ReactNode } from "react";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
+import { BacktestPage } from "./pages/BacktestPage";
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -37,10 +39,30 @@ class ErrorBoundary extends Component<
   }
 }
 
+function NavOverlay() {
+  const location = useLocation();
+  const isBacktest = location.pathname === "/backtest";
+
+  if (isBacktest) return null;
+
+  return (
+    <Link
+      to="/backtest"
+      className="fixed bottom-4 right-4 z-50 px-4 py-2 bg-accent/15 text-accent rounded-lg text-xs font-semibold hover:bg-accent/25 transition-colors border border-accent/20"
+    >
+      Backtester
+    </Link>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
-      <Dashboard />
+      <NavOverlay />
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/backtest" element={<BacktestPage />} />
+      </Routes>
     </ErrorBoundary>
   );
 }

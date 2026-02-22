@@ -6,6 +6,7 @@ import type { AgentState } from "./server.js";
 import { getDb } from "../db/client.js";
 import { trades, signalSnapshots } from "../db/schema.js";
 import { desc, eq } from "drizzle-orm";
+import { backtestRoutes } from "./backtest-routes.js";
 
 export function createRoutes(
   config: AgentConfig,
@@ -14,6 +15,9 @@ export function createRoutes(
   agentState: AgentState,
 ) {
   const api = new Hono();
+
+  // Mount backtest routes
+  api.route("/backtest", backtestRoutes);
 
   // Health check
   api.get("/health", (c) => c.json({ status: "ok", mode: config.mode }));

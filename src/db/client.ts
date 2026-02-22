@@ -66,6 +66,22 @@ function createDb() {
       close REAL NOT NULL,
       volume REAL NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS backtest_runs (
+      id TEXT PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      timeframe TEXT NOT NULL,
+      initial_capital REAL NOT NULL,
+      score_threshold REAL NOT NULL,
+      max_daily_loss REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      progress REAL NOT NULL DEFAULT 0,
+      result TEXT,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    );
   `);
 
   logger.info({ path: DB_PATH }, "Database initialized");
